@@ -28,6 +28,7 @@ def get_master(from_cache=True):
         mask = (master["Pattern"] == pattern) & (master["Sensor"] == sensor)
         # Store the file name using the mask
         master.loc[mask, "Image_PRISTINE"] = file_name
+
     for file_name in os.listdir("Imgscans_EXPOSED_sensors"):
         # Get components
         batch, pattern, id, _, sensor = file_name.split(".")[0].split("_")
