@@ -13,8 +13,11 @@ import math
 # Get the cleaned master data
 def get_master(from_cache=True):
     # If cached version is requested, read and return cached version
+    # updated version to prevent nothing from being returned
     if from_cache:
-        return reads.get_master_cached()
+        cached = reads.get_master_cached()
+        if cached is not None:
+            return cached
 
     # Read in data
     master = reads.get_master()
