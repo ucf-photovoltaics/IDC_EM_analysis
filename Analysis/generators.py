@@ -11,6 +11,13 @@ import typing
 def gen_sensor_images():
     # Stores the coords as percentages of the sensor bounds
     # Sample use: pattern_to_sensor_to_coords[pattern][sensor]["x1"|"y2"...]
+
+    #debug
+    print(f"Current working directory: {os.getcwd()}")
+    print(f"Contents of current directory: {os.listdir('.')}")
+    print(f"Contents of parent directory: {os.listdir('..')}")
+
+
     pattern_to_sensor_to_coords = {
         1: {
             "U1": {"x1":0.1012, "x2":0.3067, "y1":0.576, "y2":0.6601},
@@ -41,8 +48,20 @@ def gen_sensor_images():
     # Helper function used to generate a singular sensor image and write to file,
     # given a master row and age
     def gen_sensor_image(master_row, age: typing.Literal["EXPOSED", "PRISTINE"]):
+
+        # edit - original: matching_file_names = [file for file in os.listdir(f"Imgscans_{age}_edited")
+        # if file.startswith(master_row["Board ID"])]
+        #matching_file_names = [file for file in os.listdir(f"../Imgscans_{age}") if file.startswith(master_row["Board ID"])]
+
+        # edit:
         # Get list of file names that start with this board ID
-        matching_file_names = [file for file in os.listdir(f"Imgscans_{age}_edited") if file.startswith(master_row["Board ID"])]
+        print(f"Processing: {master_row['Board ID']}, {master_row['Sensor']}, {age}")
+
+        # updated: use correct file path
+        path = f"../Imgscans_PRISTINE_templates" if age == "PRISTINE" else f"../Imgscans_{age}"
+
+        matching_file_names = [file for file in os.listdir(path) if file.startswith(master_row["Board ID"])]
+
         # If no files are found, return
         if len(matching_file_names) == 0:
             return
@@ -73,7 +92,7 @@ def gen_sensor_images():
         file_name = f"{master_row["Board ID"]}_{"000" if age == "PRISTINE" else "001"}_{master_row["Sensor"]}.jpg"
 
         # Write to file
-        cv2.imwrite(f"Imgscans_{age}_sensors/{file_name}", sensor_image)
+        cv2.imwrite(f"../Imgscans_{age}_sensors/{file_name}", sensor_image)
 
     master = reads.get_master()
 
@@ -83,22 +102,25 @@ def gen_sensor_images():
     # Set index to a unique sensor identifier
     master.set_index(["Board ID", "Sensor"], inplace=True, drop=False)
     master.sort_index(inplace=True)
+
     # Drop duplicate indices
     master = master[~master.index.duplicated(keep='first')]
 
     # Counter variable for printed progress
     generated = 0
 
-    for pristine_file_name in os.listdir("Imgscans_PRISTINE_edited"):
+    for pristine_file_name in os.listdir("../Imgscans_PRISTINE_templates"):
         for sensor in ["U1", "U2", "U3", "U4"]:
             batch, pattern, id, _ = pristine_file_name.split("_")
             board_id = "_".join([batch, pattern, id])
 
             # Get master rows that match this file
             rows = master[(master["Board ID"] == board_id) & (master["Sensor"] == sensor)]
+
             # Skip if no master rows match
             if len(rows) == 0:
                 continue
+
             # Generate image using the first found row
             gen_sensor_image(rows.iloc[0], "PRISTINE")
             
