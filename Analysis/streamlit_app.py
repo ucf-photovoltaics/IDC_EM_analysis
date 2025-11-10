@@ -48,7 +48,7 @@ with st.sidebar:
     st.header("Settings")
     if st.button("Update Cached Data"):
         st.write("Updating...")
-        subprocess.run([sys.executable, "Analysis/update_cache.py"], cwd=repo_dir)
+        subprocess.run([sys.executable, "update_cache.py"], cwd=repo_dir)
         st.write("Done!")
 # ----------------------------------------------------------------------------------------------------------------------
 

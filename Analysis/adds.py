@@ -23,7 +23,7 @@ def get_master(from_cache=True):
     master = reads.get_master()
     
     # Add image file names
-    for file_name in os.listdir("Imgscans_PRISTINE_sensors"):
+    for file_name in os.listdir("../Imgscans_PRISTINE_sensors"):
         # Get components
         batch, pattern, id, _, sensor = file_name.split(".")[0].split("_")
         pattern = int(pattern)
@@ -32,7 +32,7 @@ def get_master(from_cache=True):
         # Store the file name using the mask
         master.loc[mask, "Image_PRISTINE"] = file_name
 
-    for file_name in os.listdir("Imgscans_EXPOSED_sensors"):
+    for file_name in os.listdir("../Imgscans_EXPOSED_sensors"):
         # Get components
         batch, pattern, id, _, sensor = file_name.split(".")[0].split("_")
         board_id = "_".join([batch, pattern, id])
