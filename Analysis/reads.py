@@ -46,11 +46,14 @@ def get_master_cached():
 
 # Get a CurrentTime file as a DataFrame with proper data types
 def get_current_time(file_name: str):
+
+    if not isinstance(file_name, str):
+        return None
+
     try:
-        # Read the file
-        current_time = pd.read_csv(f"CurrentTime/{file_name}")
+        file_path=os.path.join(IDC_directory, "CurrentTime", file_name)
+        current_time=pd.read_csv(file_path)
     except FileNotFoundError:
-        # Return None if not readable
         return None
 
     # Cast all columns to numbers
@@ -79,10 +82,10 @@ def get_cf_or_cv(file_name: str):
     cf_or_cv = components[5]
 
     try:
-        # Read the file
-        df = pd.read_csv(f"{cf_or_cv}/{cf_or_cv}_{age}/{file_name}")
+        file_path=os.path.join(IDC_directory, cf_or_cv, f"{cf_or_cv}_{age}", file_name)
+        df=pd.read_csv(file_path)
+
     except FileNotFoundError:
-        # Return None if not readable
         return None
 
     # Cast all columns to numbers
