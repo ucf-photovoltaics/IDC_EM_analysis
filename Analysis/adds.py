@@ -15,7 +15,7 @@ def get_master(from_cache=True):
     # If cached version is requested, read and return cached version
     # updated version to prevent nothing from being returned
     if from_cache:
-        cached = reads.get_master_cached()
+        cached=reads.get_master_cached()
         if cached is not None:
             return cached
 
@@ -85,9 +85,11 @@ def get_master(from_cache=True):
         master.loc[master_index, "Brightness Pristine"]=pristine_brightness
         master.loc[master_index, "Brightness Exposed"]=exposed_brightness
 
+
     # Populate mean RGB and dendrite score
     for i, row in master.iterrows():
         gen_dendrite_score(i, row)
+
 
     return master
 
