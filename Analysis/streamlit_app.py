@@ -234,7 +234,7 @@ with column2:
             master["Brightness Difference"] = master["Brightness Exposed"] - master["Brightness Pristine"]
 
             master=master[
-                ["Pattern", "Time to Failure (ms)", "Voltage", "Ph", "Dendrite Score", "Brightness Pristine",
+                ["Pattern", "Time to Failure (ms)", "Voltage", "pH", "Dendrite Score", "Brightness Pristine",
                  "Brightness Exposed", "Brightness Difference"]]
 
             # Drop NA values
@@ -273,7 +273,7 @@ with column2:
             master["Brightness Difference"] = master["Brightness Exposed"] - master["Brightness Pristine"]
             # edited
             master=master[
-                ["Pattern", "Time to Failure (ms)", "Voltage", "Ph", "Dendrite Score", "Brightness Pristine",
+                ["Pattern", "Time to Failure (ms)", "Voltage", "pH", "Dendrite Score", "Brightness Pristine",
                  "Brightness Exposed", "Brightness Difference"]]
 
             # Drop columns that are entirely NaN
@@ -306,7 +306,7 @@ with column2:
 
             # Plot
             fig, ax=plt.subplots(figsize=(8, 6))
-            sns.scatterplot(x="Ph", y="Time to Failure (ms)", data=df, hue="Solution", ax=ax)
+            sns.scatterplot(x="pH", y="Time to Failure (ms)", data=df, hue="Solution", ax=ax)
 
             ax.set_title("Time to Failure (ms) vs. pH by Solution Type")
 
