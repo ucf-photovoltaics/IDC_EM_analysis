@@ -3,7 +3,7 @@ import subprocess
 import sys
 import os
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+#sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import pandas as pd
 import seaborn as sns
@@ -15,7 +15,6 @@ import plotly.express as px
 # Get important file paths, works when this script is run in any CWD
 script_path=os.path.abspath(__file__)
 repo_dir=os.path.dirname(script_path)
-
 
 # Ensure script is run using Streamlit ---------------------------------------------------------------------------------
 # If script wasn't run with Streamlit
@@ -51,7 +50,7 @@ with st.sidebar:
     st.header("Settings")
     if st.button("Update Cached Data"):
         st.write("Updating...")
-        subprocess.run([sys.executable, "Analysis/update_cache.py"], cwd=repo_dir)
+        subprocess.run([sys.executable, "update_cache.py"], cwd=repo_dir)
         st.write("Done!")
 # ----------------------------------------------------------------------------------------------------------------------
 
@@ -232,8 +231,10 @@ with column2:
             # Get master data
             master=adds.get_master()
 
+            master["Brightness Difference"] = master["Brightness Exposed"] - master["Brightness Pristine"]
+
             master=master[
-                ["Pattern", "Time to Failure (ms)", "Voltage", "pH", "Dendrite Score", "Brightness Pristine",
+                ["Pattern", "Time to Failure (ms)", "Voltage", "Ph", "Dendrite Score", "Brightness Pristine",
                  "Brightness Exposed", "Brightness Difference"]]
 
             # Drop NA values
@@ -269,10 +270,10 @@ with column2:
         def heatmap():
             # Get master
             master=adds.get_master()
-
+            master["Brightness Difference"] = master["Brightness Exposed"] - master["Brightness Pristine"]
             # edited
             master=master[
-                ["Pattern", "Time to Failure (ms)", "Voltage", "pH", "Dendrite Score", "Brightness Pristine",
+                ["Pattern", "Time to Failure (ms)", "Voltage", "Ph", "Dendrite Score", "Brightness Pristine",
                  "Brightness Exposed", "Brightness Difference"]]
 
             # Drop columns that are entirely NaN
@@ -305,7 +306,7 @@ with column2:
 
             # Plot
             fig, ax=plt.subplots(figsize=(8, 6))
-            sns.scatterplot(x="pH", y="Time to Failure (ms)", data=df, hue="Solution", ax=ax)
+            sns.scatterplot(x="Ph", y="Time to Failure (ms)", data=df, hue="Solution", ax=ax)
 
             ax.set_title("Time to Failure (ms) vs. pH by Solution Type")
 
