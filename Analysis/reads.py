@@ -9,7 +9,6 @@ import cv2
 import typing
 import os
 
-# debug
 # new method of reading data to avoid errors:
 # get reads.py directory
 reads_directory = os.path.dirname(os.path.abspath(__file__))
