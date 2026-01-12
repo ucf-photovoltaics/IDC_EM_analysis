@@ -1,6 +1,22 @@
 import os
+import streamlit as st
 import subprocess
 import sys
+
+####
+st.write("Debugging:")
+st.write("Current directory:", os.getcwd())
+st.write("Script location:", os.path.abspath(__file__))
+
+st.write("Files:", os.listdir("."))
+
+if os.path.exists("adds.py"):
+    st.success("adds.py found")
+else:
+    st.error("adds.py not found")
+
+st.write("Files in parent:", os.listdir(".."))
+####
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,7 +25,6 @@ import plotly.express as px
 import seaborn as sns
 import sklearn
 import sklearn.model_selection as ms
-import streamlit as st
 import xgboost as xgb
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
@@ -17,6 +32,15 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler, LabelEncoder
+
+####
+try:
+    import adds
+    st.success("Successfully imported adds.py")
+except Exception as e:
+    st.error(f"Failed to import adds.py {e}")
+    st.stop()
+####
 
 import adds
 
