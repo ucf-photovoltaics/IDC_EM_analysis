@@ -1,19 +1,15 @@
 import os
+import streamlit as st
 import subprocess
 import sys
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import seaborn as sns
-import sklearn
-import sklearn.model_selection as ms
-import streamlit as st
 import xgboost as xgb
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
-from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler, LabelEncoder
@@ -48,7 +44,6 @@ with st.sidebar:
                                          "Succinic 0.388mM", "Succinic 20mM", "Succinic 1.425mM", "Succinic 0.712 mM",
                                          "Succinic 3.6mM", "Adipic Acid - 0.388mM"])
 
-    st.button("Apply Filters")
     st.header("Settings")
     if st.button("Update Cached Data"):
         st.write("Updating...")
@@ -56,190 +51,115 @@ with st.sidebar:
         st.write("Done!")
 # ----------------------------------------------------------------------------------------------------------------------
 
+# function that gets the master data + neccessary calculations
+def get_data():
+
+    # get master data
+    master = adds.get_master()
+
+    # calculate brightness difference and failure time (s)
+    master["Brightness Difference"] = master["Brightness Exposed"] - master["Brightness Pristine"]
+    master["Failure Time (s)"] = master["Time to Failure (ms)"] / 1000
+
+    master["Red"] = master["R_EXPOSED"] - master["R_PRISTINE"]
+    master["Green"] = master["G_EXPOSED"] - master["G_PRISTINE"]
+    master["Blue"] = master["B_EXPOSED"] - master["B_PRISTINE"]
+
+    return master
+
+master=get_data()
+
+# ----------------------------------------------------------------------------------------------------------------------
+
+# create 2 columns for the dashboard
 column1, column2 = st.columns(2)
 
 with column1:
-    # Random Forest ----------------------------------------------------------------------------------------------------
-    with st.container(border=True):
-        st.header("Random Forest")
-        st.text("")
-
-
-        def random_forest():
-            # Get master data
-            master = adds.get_master()
-
-            master["Brightness Difference"] = master["Brightness Exposed"] - master["Brightness Pristine"]
-            master["Failure Time (s)"] = master["Time to Failure (ms)"] / 1000
-
-            features = ["Board ID", "Pattern", "Solution", "Sensor", "Failure Time (s)", "Current", "Voltage",
-                        "Brightness Difference"]
-
-            # create a subset of the master data frame only with necessary features
-            master_subset = master[features].copy()
-            master_subset.dropna(inplace=True)
-
-            # create label encoders for categorical variables
-            le_pattern = LabelEncoder()
-            le_solution = LabelEncoder()
-            le_sensor = LabelEncoder()
-
-            # apply label encoders, save true labels for plotting
-            master_subset["True_Pattern"] = master_subset["Pattern"]
-            master_subset["Pattern"] = le_pattern.fit_transform(master_subset["Pattern"])
-
-            master_subset["True_Solution"] = master_subset["Solution"]
-            master_subset["Solution"] = le_solution.fit_transform(master_subset["Solution"])
-
-            master_subset["True_Sensor"] = master_subset["Sensor"]
-            master_subset["Sensor"] = le_sensor.fit_transform(master_subset["Sensor"])
-
-            # split data into X and Y
-            X = master_subset[["Pattern", "Solution", "Sensor", "Failure Time (s)", "Voltage"]].copy()
-            Y = master_subset[["Brightness Difference"]]
-
-            # split into training and testing
-            XTrain, XTest, YTrain, YTest = ms.train_test_split(X, Y, test_size=0.3, random_state=1)
-
-            model = sklearn.ensemble.RandomForestRegressor(n_estimators=50, criterion="squared_error", random_state=1)
-
-            # testing ranges
-            depth_val = np.arange(2, 11)
-            leaf_val = np.arange(1, 31, step=9)
-
-            grid_s = [{"max_depth": depth_val, "min_samples_leaf": leaf_val}]
-
-            # use GridSearchCV for cross validation and get the best depth/minimum samples
-            cv = GridSearchCV(estimator=model, param_grid=grid_s, cv=ms.KFold(n_splits=10))
-
-            # fit model
-            cv.fit(XTrain, YTrain.values.ravel())
-            best_depth = cv.best_params_["max_depth"]
-            best_min_samples = cv.best_params_["min_samples_leaf"]
-
-            new_model = sklearn.ensemble.RandomForestRegressor(n_estimators=50, criterion="squared_error",
-                                                               max_depth=best_depth, min_samples_leaf=best_min_samples,
-                                                               random_state=1)
-
-            # fit the model
-            model_fitted = new_model.fit(XTrain, YTrain.values.ravel())
-
-            # get predictions
-            predictions = model_fitted.predict(XTest)
-
-            # model performance metrics
-            r2 = r2_score(YTest, predictions)
-            mse = mean_squared_error(YTest, predictions)
-            rmse = np.sqrt(mse)
-            mae = mean_absolute_error(YTest, predictions)
-
-            print("\nRandom Forest Performance Metrics:\n")
-            print(f"R2 Score: {r2}", f"MSE: {mse}")
-            print(f"RMSE: {rmse}", f"MAE: {mae}")
-
-            results = pd.DataFrame({"Actual": YTest.values.ravel(), "Predicted": predictions})
-
-            fig, ax = plt.subplots(figsize=(10, 6))
-            ax.scatter(results["Actual"], results["Predicted"], alpha=0.8)
-            ax.plot([results["Actual"].min(), results["Actual"].max()], [results["Actual"].min(),
-                                                                         results["Actual"].max()], "--", c="#023858")
-            ax.annotate("r-squared = {:.3f}".format(r2), (-25, 32))
-            ax.set_xlabel("Actual Dendrite Growth")
-            ax.set_ylabel("Predicted Dendrite Growth")
-            ax.set_title("Random Forest: Actual vs Predicted")
-            st.pyplot(fig)
-
-
-        random_forest()
-    # ------------------------------------------------------------------------------------------------------------------
-
+    # A Random forest model was used first, but the XGBoost performed better so the random forest model was removed
     # XGBoost ----------------------------------------------------------------------------------------------------------
     with st.container(border=True):
         st.header("XGBoost")
-        st.text("Dendrite Growth/Failure Time (s)/Capacitance")
+        st.text("XGBoost Model Predicting Dendrite Growth")
 
 
-        def xgboost():
-            # Get master data
-            master = adds.get_master()
+        def xgboost(master):
 
-            master["Brightness Difference"] = master["Brightness Exposed"] - master["Brightness Pristine"]
-            master["Failure Time (s)"] = master["Time to Failure (ms)"] / 1000
+            with st.spinner("XGBoost model building in progress..."):
 
-            features = ["Board ID", "Pattern", "Solution", "Sensor", "Failure Time (s)", "Current", "Voltage",
+                #list of features
+                features = ["Board ID", "Pattern", "Solution", "Sensor", "Failure Time (s)", "Current", "Voltage",
                         "Brightness Difference"]
 
-            # create a subset of the master data frame only with necessary features
-            master_subset = master[features].copy()
-            master_subset.dropna(inplace=True)
+                # create a subset of the master data frame only with necessary features
+                master_subset = master[features].copy()
+                master_subset.dropna(inplace=True)
 
-            # create label encoders for categorical variables
-            le_pattern = LabelEncoder()
-            le_solution = LabelEncoder()
-            le_sensor = LabelEncoder()
+                # create label encoders for categorical variables
+                le_pattern = LabelEncoder()
+                le_solution = LabelEncoder()
+                le_sensor = LabelEncoder()
 
-            # apply label encoders
-            master_subset["Pattern"] = le_pattern.fit_transform(master_subset["Pattern"])
+                # apply label encoders
+                master_subset["Pattern"] = le_pattern.fit_transform(master_subset["Pattern"])
 
-            master_subset["Solution"] = le_solution.fit_transform(master_subset["Solution"])
+                master_subset["Solution"] = le_solution.fit_transform(master_subset["Solution"])
 
-            master_subset["Sensor"] = le_sensor.fit_transform(master_subset["Sensor"])
+                master_subset["Sensor"] = le_sensor.fit_transform(master_subset["Sensor"])
 
-            # split data into X and Y
-            X = master_subset[["Pattern", "Solution", "Sensor", "Failure Time (s)", "Voltage"]].copy()
-            y = master_subset[["Brightness Difference"]]
+                # split data into X and Y
+                X = master_subset[["Pattern", "Solution", "Sensor", "Failure Time (s)", "Voltage"]].copy()
+                y = master_subset[["Brightness Difference"]]
 
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
 
-            model = xgb.XGBRegressor(objective="reg:squarederror", n_estimators=100, random_state=42)
-            model.fit(X_train, y_train)
-            y_pred = model.predict(X_test)
-
-            param_grid = {"max_depth": [3, 6, 9], "learning_rate": [0.01, 0.1, 0.2], "subsample": [0.8, 1.0],
+                param_grid = {"max_depth": [3, 6, 9], "learning_rate": [0.01, 0.1, 0.2], "subsample": [0.8, 1.0],
                           "colsample_bytree": [0.8, 1.0]}
 
-            grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=3, n_jobs=-1, verbose=1)
+                model = xgb.XGBRegressor(objective="reg:squarederror", n_estimators=100, random_state=42)
+                grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=3, n_jobs=-1, verbose=0)
 
-            grid_search.fit(X_train, y_train)
+                grid_search.fit(X_train, y_train)
 
-            best_model = grid_search.best_estimator_
-            y_pred_tuned = best_model.predict(X_test)
+                best_model = grid_search.best_estimator_
+                y_pred = best_model.predict(X_test)
 
-            # model performance metrics
-            r2 = r2_score(y_test, y_pred)
-            mse = mean_squared_error(y_test, y_pred)
-            rmse = np.sqrt(mse)
-            mae = mean_absolute_error(y_test, y_pred)
+                # model performance metrics
+                r2 = r2_score(y_test, y_pred)
+                mse = mean_squared_error(y_test, y_pred)
+                rmse = np.sqrt(mse)
+                mae = mean_absolute_error(y_test, y_pred)
 
-            print("\nXGBoost Performance Metrics:\n")
-            print(f"R2 Score: {r2}", f"MSE: {mse}")
-            print(f"RMSE: {rmse}", f"MAE: {mae}")
+                results = pd.DataFrame({"Actual": y_test.values.ravel(), "Predicted": y_pred})
 
-            results = pd.DataFrame({"Actual": y_test.values.ravel(), "Predicted": y_pred_tuned})
-
-            fig, ax = plt.subplots(figsize=(10, 6))
-            ax.scatter(results["Actual"], results["Predicted"], alpha=0.8)
-            ax.plot([results["Actual"].min(), results["Actual"].max()], [results["Actual"].min(),
+                fig, ax = plt.subplots(figsize=(10, 6))
+                ax.scatter(results["Actual"], results["Predicted"], alpha=0.8)
+                ax.plot([results["Actual"].min(), results["Actual"].max()], [results["Actual"].min(),
                                                                          results["Actual"].max()], "--", c="#023858")
-            ax.annotate("r-squared = {:.3f}".format(r2), (-30, 25))
-            ax.set_xlabel("Actual Dendrite Growth")
-            ax.set_ylabel("Predicted Dendrite Growth")
-            ax.set_title("XGBoost: Actual vs Predicted")
-            st.pyplot(fig)
+                ax.annotate("r-squared = {:.3f}".format(r2), (-30, 25))
+                ax.set_xlabel("Actual Dendrite Growth")
+                ax.set_ylabel("Predicted Dendrite Growth")
+                ax.set_title("XGBoost: Actual vs Predicted")
+                st.pyplot(fig)
 
-            # since xgboost is performing better, plot feature importance
-            importance = model.get_booster().get_score(importance_type="weight")
+                # show metrics
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("R² Score", f"{r2:.3f}")
+                col2.metric("MSE", f"{mse:.3f}")
+                col3.metric("RMSE", f"{rmse:.3f}")
+                col4.metric("MAE", f"{mae:.3f}")
 
-            feature_importance = pd.DataFrame(
-                {"Feature": list(importance.keys()), "Importance": list(importance.values())
-                 }).sort_values(by="Importance", ascending=False)
+                importance = best_model.get_booster().get_score(importance_type="weight")
 
-            top_features = feature_importance.head().sort_values("Importance")
-            fig = px.bar(top_features, x="Importance", y="Feature", orientation="h",
+                feature_importance = pd.DataFrame(
+                    {"Feature": list(importance.keys()), "Importance": list(importance.values())
+                    }).sort_values(by="Importance", ascending=False)
+
+                top_features = feature_importance.head().sort_values("Importance")
+                fig = px.bar(top_features, x="Importance", y="Feature", orientation="h",
                          title=f"XGBoost Feature Importance",
                          labels={"Importance": "Importance"}, color="Importance", color_continuous_scale="PuBu")
 
-            fig.update_layout(
+                fig.update_layout(
                 height=600,
                 showlegend=False,
                 template="plotly_white",
@@ -259,68 +179,68 @@ with column1:
                     tickfont=dict(color="black"),
                     title_font=dict(color="black")
                 )
-            )
+                )
 
-            st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True)
 
 
-            # for failure time
+                # for failure time
+                st.text("XGBoost Model Predicting Failure Time (s)")
 
-            # split data into X and Y
-            X2 = master_subset[["Pattern", "Solution", "Sensor", "Brightness Difference", "Voltage"]].copy()
-            y2 = master_subset[["Failure Time (s)"]]
+                # split data into X and Y
+                X2 = master_subset[["Pattern", "Solution", "Sensor", "Brightness Difference", "Voltage"]].copy()
+                y2 = master_subset[["Failure Time (s)"]]
 
-            X_train2, X_test2, y_train2, y_test2 = train_test_split(X2, y2, test_size=0.3, random_state=42)
+                X_train2, X_test2, y_train2, y_test2 = train_test_split(X2, y2, test_size=0.3, random_state=42)
 
-            model2 = xgb.XGBRegressor(objective="reg:squarederror", n_estimators=100, random_state=42)
-            model2.fit(X_train2, y_train2)
-            y_pred2 = model2.predict(X_test2)
+                param_grid2 = {"max_depth": [3, 6, 9], "learning_rate": [0.01, 0.1, 0.2], "subsample": [0.8, 1.0],
+                              "colsample_bytree": [0.8, 1.0]}
 
-            param_grid = {"max_depth": [3, 6, 9], "learning_rate": [0.01, 0.1, 0.2], "subsample": [0.8, 1.0],
-                          "colsample_bytree": [0.8, 1.0]}
+                model2 = xgb.XGBRegressor(objective="reg:squarederror", n_estimators=100, random_state=42)
+                grid_search2 = GridSearchCV(estimator=model2, param_grid=param_grid2, cv=3, n_jobs=-1, verbose=0)
 
-            grid_search = GridSearchCV(estimator=model2, param_grid=param_grid, cv=3, n_jobs=-1, verbose=1)
+                grid_search2.fit(X_train2, y_train2)
 
-            grid_search.fit(X_train2, y_train2)
+                best_model2 = grid_search2.best_estimator_
+                y_pred2 = best_model2.predict(X_test2)
 
-            best_model2 = grid_search.best_estimator_
-            y_pred_tuned2 = best_model2.predict(X_test2)
+                # model performance metrics
+                r2_2 = r2_score(y_test2, y_pred2)
+                mse2 = mean_squared_error(y_test2, y_pred2)
+                rmse2 = np.sqrt(mse2)
+                mae2 = mean_absolute_error(y_test2, y_pred2)
 
-            # model performance metrics
-            r2 = r2_score(y_test2, y_pred2)
-            mse = mean_squared_error(y_test2, y_pred2)
-            rmse = np.sqrt(mse)
-            mae = mean_absolute_error(y_test2, y_pred2)
+                results = pd.DataFrame({"Actual": y_test2.values.ravel(), "Predicted": y_pred2})
 
-            print("\nXGBoost Performance Metrics:\n")
-            print(f"R2 Score: {r2}", f"MSE: {mse}")
-            print(f"RMSE: {rmse}", f"MAE: {mae}")
+                fig, ax = plt.subplots(figsize=(10, 6))
+                ax.scatter(results["Actual"], results["Predicted"], alpha=0.8)
+                ax.plot([results["Actual"].min(), results["Actual"].max()], [results["Actual"].min(),
+                                                                         results["Actual"].max()], "--", c="#023858")
+                ax.annotate("r-squared = {:.3f}".format(r2_2), (-30, 5400))
+                ax.set_xlabel("Actual Failure Time (s)")
+                ax.set_ylabel("Predicted Failure Time (s)")
+                ax.set_title("XGBoost: Actual vs Predicted")
+                st.pyplot(fig)
 
-            results = pd.DataFrame({"Actual": y_test2.values.ravel(), "Predicted": y_pred_tuned2})
+                # show metrics
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("R² Score", f"{r2_2:.3f}")
+                col2.metric("MSE", f"{mse2:.3f}")
+                col3.metric("RMSE", f"{rmse2:.3f}")
+                col4.metric("MAE", f"{mae2:.3f}")
 
-            fig, ax = plt.subplots(figsize=(10, 6))
-            ax.scatter(results["Actual"], results["Predicted"], alpha=0.8)
-            ax.plot([results["Actual"].min(), results["Actual"].max()], [results["Actual"].min(),
-                                                                         results["Actual"].max()], "--", c="#006548")
-            ax.annotate("r-squared = {:.3f}".format(r2), (-30, 25))
-            ax.set_xlabel("Actual Failure Time (s)")
-            ax.set_ylabel("Predicted Failure Time (s)")
-            ax.set_title("XGBoost: Actual vs Predicted")
-            st.pyplot(fig)
+                importance2 = best_model2.get_booster().get_score(importance_type="weight")
 
-            # since xgboost is performing better, plot feature importance
-            importance2 = model2.get_booster().get_score(importance_type="weight")
+                feature_importance = pd.DataFrame(
+                    {"Feature": list(importance2.keys()), "Importance": list(importance2.values())
+                     }).sort_values(by="Importance", ascending=False)
 
-            feature_importance = pd.DataFrame(
-                {"Feature": list(importance2.keys()), "Importance": list(importance2.values())
-                 }).sort_values(by="Importance", ascending=False)
-
-            top_features = feature_importance.head().sort_values("Importance")
-            fig = px.bar(top_features, x="Importance", y="Feature", orientation="h",
+                top_features = feature_importance.head().sort_values("Importance")
+                fig = px.bar(top_features, x="Importance", y="Feature", orientation="h",
                          title=f"XGBoost Feature Importance",
-                         labels={"Importance": "Importance"}, color="Importance", color_continuous_scale="Greens")
+                         labels={"Importance": "Importance"}, color="Importance", color_continuous_scale="PuBu")
 
-            fig.update_layout(
+                fig.update_layout(
                 height=600,
                 showlegend=False,
                 template="plotly_white",
@@ -340,12 +260,11 @@ with column1:
                     tickfont=dict(color="black"),
                     title_font=dict(color="black")
                 )
-            )
+                )
 
-            st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True)
 
-
-        xgboost()
+        xgboost(master)
 
     # ------------------------------------------------------------------------------------------------------------------
 
@@ -356,8 +275,8 @@ with column1:
                 "separated by board type and pristine/exposed")
 
 
-        def RGB_3D(option1):
-            master = adds.get_master()
+        def RGB_3D(option1, master):
+
             master.dropna(subset="Pattern", inplace=True)
 
             # filter by solution choice
@@ -389,7 +308,7 @@ with column1:
             st.plotly_chart(fig)
 
 
-        RGB_3D(option1)
+        RGB_3D(option1, master)
     # ------------------------------------------------------------------------------------------------------------------
 
     # RGB Boxplots -----------------------------------------------------------------------------------------------------
@@ -398,24 +317,20 @@ with column1:
         st.text("Plots the differences in average RGB channels for pristine VS exposed boards")
 
 
-        def RGB_boxplots(option1):
-            master = adds.get_master()
+        def RGB_boxplots(option1, master):
 
             # filter by solution choice
             if option1 != "All":
                 master = master[master["Solution"] == option1]
 
-            # Add columns for RGB difference
-            master["Red"] = master["R_EXPOSED"] - master["R_PRISTINE"]
-            master["Green"] = master["G_EXPOSED"] - master["G_PRISTINE"]
-            master["Blue"] = master["B_EXPOSED"] - master["B_PRISTINE"]
-
-            master["Pattern"] = pd.Categorical(master["Pattern"], categories=[1, 4, 7, 10], ordered=True)
+            master = master.copy()
 
             # Convert to long for easy plotting
             # A channel column will be added, storing "R_Diff"...
             master = pd.melt(master, id_vars=["Board ID", "Sensor", "Pattern"], value_vars=["Red", "Green", "Blue"],
                              var_name="Channel", value_name="Channel Difference")
+
+            master = master.dropna(subset=["Pattern", "Channel Difference"])
 
             # Create a FacetGrid
             g = sns.FacetGrid(data=master, col="Channel", margin_titles=True, hue="Channel", palette={"Red": "#FF0000",
@@ -423,15 +338,14 @@ with column1:
                                                                                                       "Blue": "#0000FF"})
 
             # Create a lineplot on the FacetGrid
-            g.map_dataframe(sns.boxplot, x="Pattern", y="Channel Difference", )
+            g.map_dataframe(sns.boxplot, x="Pattern", y="Channel Difference", order=sorted(master["Pattern"].dropna().unique()))
 
             # Set the text of the titles
             g.set_titles(col_template="{col_name}")
 
             st.pyplot(g)
 
-
-        RGB_boxplots(option1)
+        RGB_boxplots(option1, master)
     # ------------------------------------------------------------------------------------------------------------------
 
     # Grayscale Boxplots -----------------------------------------------------------------------------------------------
@@ -439,23 +353,19 @@ with column1:
         st.header("Grayscale Boxplots")
         st.text("Plots the average brightness of each board - indicates dendrite growth")
 
-
-        def grayscale(option1):
-            master = adds.get_master()
+        def grayscale(option1, master):
 
             # filter by solution choice
             if option1 != "All":
                 master = master[master["Solution"] == option1]
 
-            # Add column for brightness difference
-            master["Brightness Difference"] = master["Brightness Exposed"] - master["Brightness Pristine"]
-
-            # make pattern categorical and ordered to make sure it is plotted correctly
-            master["Pattern"] = pd.Categorical(master["Pattern"], categories=[1, 4, 7, 10], ordered=True)
+            master = master.dropna(subset=["Pattern", "Brightness Difference"])
 
             # plot
             fig, ax = plt.subplots(figsize=(10, 6))
-            sns.boxplot(data=master, x="Pattern", y="Brightness Difference", hue="Sensor", palette="Spectral", ax=ax)
+            patterns = sorted(master["Pattern"].dropna().unique())
+            sns.boxplot(data=master, x="Pattern", y="Brightness Difference", hue="Sensor", palette="coolwarm", ax=ax,
+                        order=patterns, legend=True)
 
             # change title based on solution choice
             if option1 == "All":
@@ -465,8 +375,7 @@ with column1:
 
             st.pyplot(fig)
 
-
-        grayscale(option1)
+        grayscale(option1, master)
     # ------------------------------------------------------------------------------------------------------------------
 
     # Failure Time vs Solution -----------------------------------------------------------------------------------------
@@ -474,11 +383,7 @@ with column1:
         st.header("Failure Time vs Solution")
         st.text("Plots failure time as function of solution, separated by board type and sensor")
 
-
-        def failure_time(option1):
-
-            # get master data
-            master = adds.get_master()
+        def failure_time(option1, master):
 
             # drop rows with missing values
             master.dropna(subset="Voltage", inplace=True)
@@ -487,17 +392,14 @@ with column1:
             if option1 != "All":
                 master = master[master["Solution"] == option1]
 
-            # add column to store failure time values
-            master["Failure Time (s)"] = master["Time to Failure (ms)"] / 1000
-
             # log transformation of failure time for readability
             master["Log(Failure Time (s))"] = np.log10(master["Failure Time (s)"] + 1)
 
-            master["Pattern"] = pd.Categorical(master["Pattern"], categories=[1, 4, 7, 10], ordered=True)
-
             # plot
             fig, ax = plt.subplots(figsize=(10, 6))
-            sns.boxplot(data=master, x="Pattern", y="Log(Failure Time (s))", hue="Sensor", ax=ax, palette="Spectral")
+            patterns = sorted(master["Pattern"].dropna().unique())
+            sns.boxplot(data=master, x="Pattern", y="Log(Failure Time (s))", hue="Sensor", ax=ax, palette="coolwarm",
+                        order=patterns, legend=True)
 
             # change title based on solution choice
             if option1 == "All":
@@ -508,7 +410,7 @@ with column1:
             st.pyplot(fig)
 
 
-        failure_time(option1)
+        failure_time(option1, master)
     # ------------------------------------------------------------------------------------------------------------------
 
     # Scatterplot Matrix --------------------------------------------------------------------------------------------------
@@ -516,13 +418,9 @@ with column1:
         st.header("Scatterplot Matrix")
         st.text("Plots a scatterplot matrix for all variable pairs")
 
+        def scatter(master):
 
-        def scatter():
-            # Get master data
-            master = adds.get_master()
-
-            master["Brightness Difference"] = master["Brightness Exposed"] - master["Brightness Pristine"]
-
+            # get a subset of the master dataframe
             master = master[
                 ["Pattern", "Time to Failure (ms)", "Voltage", "pH", "Dendrite Score", "Brightness Pristine",
                  "Brightness Exposed", "Brightness Difference"]]
@@ -548,229 +446,190 @@ with column1:
             st.pyplot(fig)
 
 
-        scatter()
+        scatter(master)
     # ------------------------------------------------------------------------------------------------------------------
 
-    # Correlation Heatmap ----------------------------------------------------------------------------------------------
-    with st.container(border=True):
-        st.header("Correlation Heatmap")
-        st.text("Plots the correlations between all variable pairs")
-
-
-        def heatmap():
-            # Get master
-            master = adds.get_master()
-            master["Brightness Difference"] = master["Brightness Exposed"] - master["Brightness Pristine"]
-
-            master = master[
-                ["Pattern", "Time to Failure (ms)", "Voltage", "pH", "Dendrite Score", "Brightness Pristine",
-                 "Brightness Exposed", "Brightness Difference"]]
-
-            # Drop columns that are entirely NaN
-            master.dropna(axis=1, how="all", inplace=True)
-            # Drop columns that are non-numeric
-            master = master.select_dtypes(include=["number"])
-
-            # Create a heatmap of the correlation matrix
-            fig, ax = plt.subplots(figsize=(10, 8))
-
-            sns.heatmap(master.corr(), annot=True, cmap="coolwarm", ax=ax)
-
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
-            ax.set_yticklabels(ax.get_yticklabels(), rotation=45, va="center")
-
-            plt.tight_layout()
-            st.pyplot(fig)
-
-
-        heatmap()
-    # ------------------------------------------------------------------------------------------------------------------
 
 with column2:
     # Cluster Analysis -------------------------------------------------------------------------------------------------
     with st.container(border=True):
         st.header("Cluster Analysis")
 
+        def cluster_analysis(master):
+            with st.spinner("Performing cluster analysis..."):
 
-        def cluster_analysis():
-
-            # Get master data
-            master = adds.get_master()
-
-            master["Brightness Difference"] = master["Brightness Exposed"] - master["Brightness Pristine"]
-            master["Failure Time (s)"] = master["Time to Failure (ms)"] / 1000
-
-            features = ["Board ID", "Pattern", "Solution", "Sensor", "Failure Time (s)", "Current", "Voltage",
+                # list of features
+                features = ["Board ID", "Pattern", "Solution", "Sensor", "Failure Time (s)", "Current", "Voltage",
                         "Brightness Difference"]
 
-            # create a subset of the master data frame only with necessary features
-            master_subset = master[features].copy()
-            master_subset.dropna(inplace=True)
+                # create a subset of the master data frame only with necessary features
+                master_subset = master[features].copy()
+                master_subset.dropna(inplace=True)
 
-            # create label encoders for categorical variables
-            le_pattern = LabelEncoder()
-            le_solution = LabelEncoder()
-            le_sensor = LabelEncoder()
+                # create label encoders for categorical variables
+                le_pattern = LabelEncoder()
+                le_solution = LabelEncoder()
+                le_sensor = LabelEncoder()
 
-            # apply label encoders, save true labels for plotting
-            master_subset["True_Pattern"] = master_subset["Pattern"]
-            master_subset["Pattern"] = le_pattern.fit_transform(master_subset["Pattern"])
+                # apply label encoders, save true labels for plotting
+                master_subset["True_Pattern"] = master_subset["Pattern"]
+                master_subset["Pattern"] = le_pattern.fit_transform(master_subset["Pattern"])
 
-            master_subset["True_Solution"] = master_subset["Solution"]
-            master_subset["Solution"] = le_solution.fit_transform(master_subset["Solution"])
+                master_subset["True_Solution"] = master_subset["Solution"]
+                master_subset["Solution"] = le_solution.fit_transform(master_subset["Solution"])
 
-            master_subset["True_Sensor"] = master_subset["Sensor"]
-            master_subset["Sensor"] = le_sensor.fit_transform(master_subset["Sensor"])
+                master_subset["True_Sensor"] = master_subset["Sensor"]
+                master_subset["Sensor"] = le_sensor.fit_transform(master_subset["Sensor"])
 
-            # split data into X and Y
-            X = master_subset[["Pattern", "Solution", "Sensor", "Failure Time (s)", "Voltage"]].copy()
-            Y = master_subset[["Brightness Difference"]]
+                # split data into X and Y
+                X = master_subset[["Pattern", "Solution", "Sensor", "Failure Time (s)", "Voltage"]].copy()
+                Y = master_subset[["Brightness Difference"]]
 
-            # scale X using standard scaler
-            scaler = StandardScaler()
-            X_scaled = scaler.fit_transform(X)
+                # scale X using standard scaler
+                scaler = StandardScaler()
+                X_scaled = scaler.fit_transform(X)
 
-            # record total intra-cluster variation
-            ticv = []
+                # record total intra-cluster variation
+                ticv = []
 
-            # test various values of K to find the best one
-            for k in range(1, 11):
-                kmeans = KMeans(n_clusters=k, n_init=20)
+                # test various values of K to find the best one
+                for k in range(1, 11):
+                    kmeans = KMeans(n_clusters=k, n_init=20)
 
-                # fit kmeans algorithm
-                kmeans.fit(X_scaled)
+                    # fit kmeans algorithm
+                    kmeans.fit(X_scaled)
 
-                # record total intra-cluster variation for K=k
-                ticv.append(kmeans.inertia_)
+                    # record total intra-cluster variation for K=k
+                    ticv.append(kmeans.inertia_)
 
-            st.text("Elbow plot - used for finding the optimal number of clusters")
+                st.text("Elbow plot - used for finding the optimal number of clusters")
 
-            # Plot elbow graph
-            fig, ax = plt.subplots(figsize=(10, 6))
-            ax.plot(range(1, 11), ticv, linewidth=4, marker="o", c="#5e2943")
-            ax.set_xlabel("Number of Clusters (K)")
-            ax.set_ylabel("Total Intra-Cluster Variation")
-            ax.grid(True, alpha=0.3)
-            st.pyplot(fig)
+                # Plot elbow graph
+                fig, ax = plt.subplots(figsize=(10, 6))
+                ax.plot(range(1, 11), ticv, linewidth=4, marker="o", c="#5e2943")
+                ax.set_xlabel("Number of Clusters (K)")
+                ax.set_ylabel("Total Intra-Cluster Variation")
+                ax.grid(True, alpha=0.3)
+                st.pyplot(fig)
 
-            # choose 2 clusters based on elbow chart
-            kmeans = KMeans(n_clusters=2, n_init=20)
-            y_kmeans = kmeans.fit_predict(X_scaled)
+                # choose 2 clusters based on elbow chart
+                kmeans = KMeans(n_clusters=2, n_init=20)
+                y_kmeans = kmeans.fit_predict(X_scaled)
 
-            # add cluster column [0,1]
-            master_subset["cluster"] = y_kmeans
+                # add cluster column [0,1]
+                master_subset["cluster"] = y_kmeans
 
-            # ensure that the cluster labels stay the same each run
-            mean_failure = master_subset.groupby("cluster")["Failure Time (s)"].mean()
-            if mean_failure[0] > mean_failure[1]:
-                # switch cluster labels
-                master_subset["cluster"] = master_subset["cluster"].map({0: 1, 1: 0})
+                # ensure that the cluster labels stay the same each run
+                mean_failure = master_subset.groupby("cluster")["Failure Time (s)"].mean()
+                if mean_failure[0] > mean_failure[1]:
+                    # switch cluster labels
+                    master_subset["cluster"] = master_subset["cluster"].map({0: 1, 1: 0})
 
-            # show data frame of cluster board ID's, patterns and sensors
-            st.subheader("Cluster 0 Boards")
-            st.dataframe(master_subset[master_subset["cluster"] == 0][["Board ID", "Pattern", "Sensor"]])
+                # show data frame of cluster board ID's, patterns and sensors
+                st.subheader("Cluster 0 Boards")
+                st.dataframe(master_subset[master_subset["cluster"] == 0][["Board ID", "Pattern", "Sensor"]])
 
-            st.subheader("Cluster 1 Boards")
-            st.dataframe(master_subset[master_subset["cluster"] == 1][["Board ID", "Pattern", "Sensor"]])
+                st.subheader("Cluster 1 Boards")
+                st.dataframe(master_subset[master_subset["cluster"] == 1][["Board ID", "Pattern", "Sensor"]])
 
-            # apply PCA for visualization purposes
-            pca = PCA(n_components=2)
-            X_pca = pca.fit_transform(X_scaled)
+                # apply PCA for visualization purposes
+                pca = PCA(n_components=2)
+                X_pca = pca.fit_transform(X_scaled)
 
-            st.text("Data clustered using K-Means Clustering - visualized through PCA projection")
+                st.text("Data clustered using K-Means Clustering - visualized through PCA projection")
 
-            # plot clusters using PCA projection
-            fig, ax = plt.subplots(figsize=(10, 6))
-            scatter = ax.scatter(X_pca[:, 0], X_pca[:, 1], c=y_kmeans, cmap="managua")
-            ax.set_xlabel("Principal Component #1")
-            ax.set_ylabel("Principal Component #2")
-            ax.set_title("K-Means Clustering (PCA Projection)")
-            plt.colorbar(scatter, ax=ax, label="Cluster")
-            ax.grid(True, alpha=0.3)
-            st.pyplot(fig)
+                # plot clusters using PCA projection
+                fig, ax = plt.subplots(figsize=(10, 6))
+                scatter = ax.scatter(X_pca[:, 0], X_pca[:, 1], c=y_kmeans, cmap="berlin")
+                ax.set_xlabel("Principal Component #1")
+                ax.set_ylabel("Principal Component #2")
+                ax.set_title("K-Means Clustering (PCA Projection)")
+                plt.colorbar(scatter, ax=ax, label="Cluster")
+                ax.grid(True, alpha=0.3)
+                st.pyplot(fig)
 
-            # calculate cluster characteristics and counts for comparison
-            cluster_statistics = master_subset.groupby("cluster")[["Failure Time (s)"]].mean()
-            pattern_counts = master_subset.groupby(["cluster", "True_Pattern"]).size().unstack(fill_value=0)
-            sensor_counts = master_subset.groupby(["cluster", "True_Sensor"]).size().unstack(fill_value=0)
-            solution_counts = master_subset.groupby(["cluster", "True_Solution"]).size().unstack(fill_value=0)
-            voltage_counts = master_subset.groupby(["cluster", "Voltage"]).size().unstack(fill_value=0)
-            cluster_summary = master_subset.groupby("cluster")["Brightness Difference"].agg(["sum"])
+                # calculate cluster characteristics and counts for comparison
+                cluster_statistics = master_subset.groupby("cluster")[["Failure Time (s)"]].mean()
+                pattern_counts = master_subset.groupby(["cluster", "True_Pattern"]).size().unstack(fill_value=0)
+                sensor_counts = master_subset.groupby(["cluster", "True_Sensor"]).size().unstack(fill_value=0)
+                solution_counts = master_subset.groupby(["cluster", "True_Solution"]).size().unstack(fill_value=0)
+                voltage_counts = master_subset.groupby(["cluster", "Voltage"]).size().unstack(fill_value=0)
+                cluster_summary = master_subset.groupby("cluster")["Brightness Difference"].agg(["sum"])
 
-            # color palette
-            colors = ["#97e3fa", "#ffd584"]
+                # color palette
+                colors = ["#7dabf0", "#bd6d62"]
 
-            st.text("Cluster Summaries")
+                st.text("Cluster Summaries")
 
-            # create figure and axes for bar plots of various cluster characteristics
-            fig, axes = plt.subplots(3, 2, figsize=(14, 12))
+                # create figure and axes for bar plots of various cluster characteristics
+                fig, axes = plt.subplots(3, 2, figsize=(14, 12))
 
-            # failure time by cluster
-            ax = axes[0, 0]
-            cluster_statistics["Failure Time (s)"].plot(kind="bar", ax=ax, color=colors)
-            ax.set_title("Failure Time by Cluster")
-            ax.set_xlabel("Cluster")
-            ax.set_ylabel("Time (seconds)")
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
-            ax.grid(axis="y", alpha=0.3)
+                # failure time by cluster
+                ax = axes[0, 0]
+                cluster_statistics["Failure Time (s)"].plot(kind="bar", ax=ax, color=colors)
+                ax.set_title("Failure Time by Cluster")
+                ax.set_xlabel("Cluster")
+                ax.set_ylabel("Time (seconds)")
+                ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
+                ax.grid(axis="y", alpha=0.3)
 
-            # dendrite growth by cluster
-            ax = axes[0, 1]
-            cluster_summary["sum"].T.plot(kind="bar", ax=ax, color=colors, width=0.8)
-            ax.set_xlabel("Cluster")
-            ax.set_xticks([0, 1])
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=0, ha="center")
-            ax.set_ylim(0, 700)
-            ax.set_ylabel("Dendrite Growth")
-            ax.set_title("Dendrite Growth by Cluster")
-            ax.grid(axis="y", alpha=0.3)
+                # dendrite growth by cluster
+                ax = axes[0, 1]
+                cluster_summary["sum"].T.plot(kind="bar", ax=ax, color=colors, width=0.8)
+                ax.set_xlabel("Cluster")
+                ax.set_xticks([0, 1])
+                ax.set_xticklabels(ax.get_xticklabels(), rotation=0, ha="center")
+                ax.set_ylim(0, 700)
+                ax.set_ylabel("Dendrite Growth")
+                ax.set_title("Dendrite Growth by Cluster")
+                ax.grid(axis="y", alpha=0.3)
 
-            # voltage by cluster
-            ax = axes[1, 0]
-            voltage_counts.T.plot(kind="bar", ax=ax, color=colors, width=0.8)
-            ax.set_title("Voltage by Cluster")
-            ax.set_xlabel("Voltage")
-            ax.set_ylabel("Count")
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
-            ax.legend(["Cluster 0", "Cluster 1"], loc="upper right")
-            ax.grid(axis="y", alpha=0.3)
+                # voltage by cluster
+                ax = axes[1, 0]
+                voltage_counts.T.plot(kind="bar", ax=ax, color=colors, width=0.8)
+                ax.set_title("Voltage by Cluster")
+                ax.set_xlabel("Voltage")
+                ax.set_ylabel("Count")
+                ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
+                ax.legend(["Cluster 0", "Cluster 1"], loc="upper right")
+                ax.grid(axis="y", alpha=0.3)
 
-            # patterns by cluster
-            ax = axes[1, 1]
-            pattern_counts.T.plot(kind="bar", ax=ax, color=colors, width=0.8)
-            ax.set_title("Pattern by Cluster")
-            ax.set_xlabel("Pattern")
-            ax.set_ylabel("Count")
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
-            ax.legend(["Cluster 0", "Cluster 1"], loc="best")
-            ax.grid(axis="y", alpha=0.3)
+                # patterns by cluster
+                ax = axes[1, 1]
+                pattern_counts.T.plot(kind="bar", ax=ax, color=colors, width=0.8)
+                ax.set_title("Pattern by Cluster")
+                ax.set_xlabel("Pattern")
+                ax.set_ylabel("Count")
+                ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
+                ax.legend(["Cluster 0", "Cluster 1"], loc="best")
+                ax.grid(axis="y", alpha=0.3)
 
-            # sensors by cluster
-            ax = axes[2, 0]
-            sensor_counts.T.plot(kind="bar", ax=ax, color=colors, width=0.8)
-            ax.set_title("Sensor Type Distribution by Cluster")
-            ax.set_xlabel("Sensor")
-            ax.set_ylabel("Count")
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
-            ax.legend(["Cluster 0", "Cluster 1"], loc="best")
-            ax.grid(axis="y", alpha=0.3)
+                # sensors by cluster
+                ax = axes[2, 0]
+                sensor_counts.T.plot(kind="bar", ax=ax, color=colors, width=0.8)
+                ax.set_title("Sensor Type Distribution by Cluster")
+                ax.set_xlabel("Sensor")
+                ax.set_ylabel("Count")
+                ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
+                ax.legend(["Cluster 0", "Cluster 1"], loc="best")
+                ax.grid(axis="y", alpha=0.3)
 
-            # solutions by cluster
-            ax = axes[2, 1]
-            solution_counts.T.plot(kind="bar", ax=ax, color=colors, width=0.8)
-            ax.set_title("Solution Type by Cluster")
-            ax.set_xlabel("Solution")
-            ax.set_ylabel("Count")
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
-            ax.legend(["Cluster 0", "Cluster 1"], loc="best")
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
-            ax.grid(axis="y", alpha=0.3)
+                # solutions by cluster
+                ax = axes[2, 1]
+                solution_counts.T.plot(kind="bar", ax=ax, color=colors, width=0.8)
+                ax.set_title("Solution Type by Cluster")
+                ax.set_xlabel("Solution")
+                ax.set_ylabel("Count")
+                ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
+                ax.legend(["Cluster 0", "Cluster 1"], loc="best")
+                ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
+                ax.grid(axis="y", alpha=0.3)
 
-            plt.tight_layout()
-            st.pyplot(fig)
+                plt.tight_layout()
+                st.pyplot(fig)
 
 
-        cluster_analysis()
+        cluster_analysis(master)
 
     # ------------------------------------------------------------------------------------------------------------------
 
@@ -780,17 +639,15 @@ with column2:
         st.text("Plots failure time as a function of pH")
 
 
-        def plot_ph():
-            # get master data
-            df = adds.get_master()
+        def plot_ph(master):
 
             # Remove solutions with no recorded Ph so they don't take up space in the legend
-            df = df[(df["Solution"] == "Adipic Acid - 1.24mM") | (df["Solution"] == "Adipic Acid - 0.712mM") | (
-                    df["Solution"] == "Adipic Acid - 0.388mM") | (df["Solution"] == "Succinic 0.388mM")]
+            master = master[(master["Solution"] == "Adipic Acid - 1.24mM") | (master["Solution"] == "Adipic Acid - 0.712mM") | (
+                    master["Solution"] == "Adipic Acid - 0.388mM") | (master["Solution"] == "Succinic 0.388mM")]
 
             # Plot
             fig, ax = plt.subplots(figsize=(8, 6))
-            sns.scatterplot(x="pH", y="Time to Failure (ms)", data=df, hue="Solution", ax=ax)
+            sns.scatterplot(x="pH", y="Time to Failure (ms)", data=master, hue="Solution", ax=ax)
 
             ax.set_title("Time to Failure (ms) vs. pH by Solution Type")
 
@@ -801,8 +658,7 @@ with column2:
             plt.tight_layout()
             st.pyplot(fig)
 
-
-        plot_ph()
+        plot_ph(master)
 
     # ------------------------------------------------------------------------------------------------------------------
 
@@ -811,8 +667,7 @@ with column2:
         st.header("CF and CV Plots")
         st.text("Plots CF and CV Data")
 
-
-        def CF_CV():
+        def CF_CV(master):
 
             # get CF and CV data
             CF = adds.get_master_cf_or_cv(cf_or_cv="CF")
@@ -908,8 +763,7 @@ with column2:
             plt.tight_layout()
             st.pyplot(fig)
 
-
-        CF_CV()
+        CF_CV(master)
     # ------------------------------------------------------------------------------------------------------------------
 
     # Current vs Time --------------------------------------------------------------------------------------------------
@@ -917,8 +771,7 @@ with column2:
         st.header("Current vs Time")
         st.text("Plots current as a function of time for each tested sensor separated by solution and board type")
 
-
-        def current_vs_time():
+        def current_vs_time(master):
 
             # Get joined data
             master_current_time = adds.get_master_current_time()
@@ -967,8 +820,39 @@ with column2:
 
                 st.pyplot(g.figure)
 
+        current_vs_time(master)
+    # ------------------------------------------------------------------------------------------------------------------
 
-        current_vs_time()
+# Correlation Heatmap ----------------------------------------------------------------------------------------------
+    with st.container(border=True):
+        st.header("Correlation Heatmap")
+        st.text("Plots the correlations between all variable pairs")
+
+        def heatmap(master):
+
+            # create subset of master data frame
+            master = master[
+                ["Pattern", "Time to Failure (ms)", "Voltage", "pH", "Dendrite Score", "Brightness Pristine",
+                 "Brightness Exposed", "Brightness Difference"]]
+
+            # Drop columns that are entirely NaN
+            master.dropna(axis=1, how="all", inplace=True)
+            # Drop columns that are non-numeric
+            master = master.select_dtypes(include=["number"])
+
+            # Create a heatmap of the correlation matrix
+            fig, ax = plt.subplots(figsize=(10, 8))
+
+            sns.heatmap(master.corr(), annot=True, cmap="coolwarm", ax=ax)
+
+            ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
+            ax.set_yticklabels(ax.get_yticklabels(), rotation=45, va="center")
+
+            plt.tight_layout()
+            st.pyplot(fig)
+
+
+        heatmap(master)
     # ------------------------------------------------------------------------------------------------------------------
 
 # option to view cached data frame
